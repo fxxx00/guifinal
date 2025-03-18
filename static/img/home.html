@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home</title>
+</head>
+<body>
+    <h1>Bem-vindo {{ request.user.username }}!</h1>
+
+    {% if is_admin %}
+        <p>Você é um administrador. Aqui você pode acessar funcionalidades extras.</p>
+    {% else %}
+        <p>Você é um usuário normal.</p>
+    {% endif %}
+
+    <a href="{% url 'logout' %}">Logout</a>
+</body>
+</html>
