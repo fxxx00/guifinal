@@ -424,7 +424,29 @@
         .remove-filter-btn:hover {
             color: #ff4444;
         }
+        .sheet-tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #444;
+        }
 
+        .sheet-tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: #333;
+            color: #fff;
+            margin-right: 5px;
+            border-radius: 4px 4px 0 0;
+            transition: background-color 0.3s;
+        }
+
+        .sheet-tab.active {
+            background-color: #4CAF50;
+        }
+
+        .sheet-tab:hover {
+            background-color: #555;
+        }
     </style>
 </head>
 <body>
@@ -455,6 +477,11 @@
 
     <div class="content">
         <h2>Guilherme Grummt Wolf</h2>
+        <div class="sheet-tabs">
+            <div class="sheet-tab active" id="TJPR" onclick="switchSheet('TJPR')">TJPR</div>
+            <div class="sheet-tab" id="TJSC" onclick="switchSheet('TJSC')">TJSC</div>
+            <div class="sheet-tab" id="TJRS" onclick="switchSheet('TJRS')">TJRS</div>
+        </div>
         <div class="styled-table-container">
             <table id="dynamic-table" class="styled-table">
                 {{ table_html | safe }}
@@ -497,6 +524,37 @@
     <div class="loading" id="loading">Carregando...</div>
 
     <script>
+        async function switchSheet(sheetName) {
+    try {
+        const response = await fetch(`/switch_sheet/${sheetName}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            if (data.status === 'success') {
+                // Atualizar a classe ativa das abas
+                document.querySelectorAll('.sheet-tab').forEach(tab => {
+                    tab.classList.remove('active');
+                });
+                document.getElementById(sheetName).classList.add('active');
+
+                // Recarregar os filtros
+                await loadFilters();
+
+                // Aplicar os filtros padrão (sem filtros ativos)
+                resetFilters();
+            }
+        } else {
+            console.error('Erro ao alternar aba:', await response.text());
+        }
+    } catch (error) {
+        console.error('Erro ao alternar aba:', error);
+    }
+}
  function formatCurrency(input) {
     const cursorPosition = input.selectionStart;
     let value = input.value.replace(/[^\d,]/g, '');
@@ -764,11 +822,16 @@ function removeFilter(column) {
 async function loadFilters() {
     try {
         toggleLoading(true);
+        // Limpar os filtros atuais
+        const container = document.getElementById('filters-container');
+        container.innerHTML = '';
+
+        // Carregar os novos filtros
         const response = await fetch('/api/filters');
         const filters = await response.json();
         console.log("Loaded filters:", filters);
-        const container = document.getElementById('filters-container');
 
+        // Adicionar os filtros ao container
         for (const [column, filter] of Object.entries(filters)) {
             if (column === 'Valor Deferido') continue; // 'Valor Deferido' já está fixo no HTML
 
