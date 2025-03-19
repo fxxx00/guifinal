@@ -893,6 +893,8 @@
 #     app.run(debug=True)
 
 
+
+
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 import pandas as pd
 from datetime import datetime
@@ -912,6 +914,13 @@ app.secret_key = 'minha_chave_pessoal'  # Chave fixa para uso pessoal
 
 USUARIO_VALIDO = "cliente"
 SENHA_VALIDA = "senha123"
+
+# Dicionário para armazenar os caminhos dos arquivos CSV
+CSV_FILES = {
+    'TJPR': 'dadosnovostjpr.csv',
+    'TJSC': 'TJSC.csv',
+    'TJRS': 'TJRS.csv'
+}
 
 # Ajuste do CSV_PATH
 if getattr(sys, 'frozen', False):
@@ -936,7 +945,25 @@ else:
             logging.error(f"Template não encontrado: {template_path}")
         else:
             logging.info(f"Template encontrado: {template_path}")
+# Função para carregar o CSV correto com base na aba selecionada
+def get_csv_path(sheet_name):
+    base_path = os.path.dirname(__file__)
+    return os.path.join(base_path, CSV_FILES.get(sheet_name, 'dadosnovos.csv'))
 
+# Ajuste do CSV_PATH
+def get_current_csv_path():
+    return get_csv_path(session.get('current_sheet', 'TJPR'))
+
+@app.route('/switch_sheet/<sheet_name>', methods=['POST'])
+def switch_sheet(sheet_name):
+    if sheet_name in CSV_FILES:
+        session['current_sheet'] = sheet_name
+        # Limpar os filtros atuais ao trocar de aba
+        session.pop('filters', None)
+        # Recarregar os filtros do novo CSV
+        filters = get_column_filters()
+        return jsonify({'status': 'success', 'sheet': sheet_name, 'filters': filters})
+    return jsonify({'status': 'error', 'message': 'Sheet not found'}), 404
 # Colunas que não precisam de filtro
 COLUNAS_SEM_FILTRO = ['Precatório', 'Autos do precatório', 'Processo Originário', 'Ordem', 'Processo Originário']
 
@@ -1002,7 +1029,8 @@ def apply_filters(df, filter_params):
 
 def get_column_filters():
     try:
-        df = pd.read_csv("dadosnovos.csv")
+        csv_path = get_current_csv_path()
+        df = pd.read_csv(csv_path)
         filters = {}
         if 'Situação' in df.columns:
             situacoes_validas = ["Requisitado", "Pagamento em Processamento", 'Indefinido']
@@ -1017,7 +1045,7 @@ def get_column_filters():
         for column in df.columns:
             if column not in COLUNAS_SEM_FILTRO and column != 'Apresentação':
                 if column == 'Local' or column == 'Tribunal de Origem':
-                    unique_values = sorted(df[column].dropna().unique().tolist())  # Adicionei dropna() para evitar valores nulos
+                    unique_values = sorted(df[column].dropna().unique().tolist())
                     logging.info(f"Unique values for {column}: {unique_values}")
                     filters[column] = {'type': 'categorical', 'values': unique_values}
                 elif df[column].dtype in ['int64', 'float64'] or column == 'Valor Deferido':
@@ -1039,8 +1067,9 @@ def get_column_filters():
 def load_csv(page=1, page_size=100, sort_column=None, ascending=True, filter_params=None):
     try:
         pd.options.mode.chained_assignment = None
-        logging.info(f"Lendo CSV de: {CSV_PATH}")
-        df = pd.read_csv(CSV_PATH, on_bad_lines='skip')
+        csv_path = get_current_csv_path()
+        logging.info(f"Lendo CSV de: {csv_path}")
+        df = pd.read_csv(csv_path, on_bad_lines='skip')
         logging.info(f"CSV lido com sucesso. Total de linhas: {len(df)}")
 
         # Limpeza de colunas desnecessárias
@@ -1233,4 +1262,6 @@ if __name__ == '__main__':
     except Exception as e:
 
         logging.error(f"Erro ao iniciar o servidor: {str(e)}")
+
+
 
