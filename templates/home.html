@@ -447,6 +447,10 @@
         .sheet-tab:hover {
             background-color: #555;
         }
+        .highlighted {
+    background-color: yellow !important;
+    color: black !important; /* Para garantir que o texto seja visível */
+}
     </style>
 </head>
 <body>
@@ -822,18 +826,35 @@ function removeFilter(column) {
 async function loadFilters() {
     try {
         toggleLoading(true);
-        // Limpar os filtros atuais
         const container = document.getElementById('filters-container');
         container.innerHTML = '';
 
-        // Carregar os novos filtros
+        // Carregar os filtros do backend
         const response = await fetch('/api/filters');
         const filters = await response.json();
         console.log("Loaded filters:", filters);
 
-        // Adicionar os filtros ao container
+        // Adicionar o filtro de Valor Deferido
+        if (filters['Valor Deferido']) {
+            const valorDeferidoFilter = `
+                <div class="filter-section" id="valor-deferido-filter">
+                    <h4>Valor Deferido</h4>
+                    <div class="filter-item">
+                        <label>Valor Inicial:</label>
+                        <input type="text" id="valor-deferido-min" class="currency-input" placeholder="Ex: 1.000,50">
+                    </div>
+                    <div class="filter-item">
+                        <label>Valor Final:</label>
+                        <input type="text" id="valor-deferido-max" class="currency-input" placeholder="Ex: 5.000,75">
+                    </div>
+                </div>
+            `;
+            container.insertAdjacentHTML('afterbegin', valorDeferidoFilter);
+        }
+
+        // Adicionar outros filtros
         for (const [column, filter] of Object.entries(filters)) {
-            if (column === 'Valor Deferido') continue; // 'Valor Deferido' já está fixo no HTML
+            if (column === 'Valor Deferido') continue; // Já adicionamos o filtro de Valor Deferido
 
             const filterSection = document.createElement('div');
             filterSection.className = 'filter-section';
@@ -873,31 +894,10 @@ async function loadFilters() {
                         </select>
                     </div>
                 `;
-                const input = filterSection.querySelector(`#${column.toLowerCase().replace(/\s+/g, '-')}-search`);
-                const select = filterSection.querySelector(`#${column.toLowerCase().replace(/\s+/g, '-')}-select`);
-                input.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        const searchTerm = this.value.toLowerCase();
-                        let found = false;
-                        Array.from(select.options).forEach(option => {
-                            if (option.value.toLowerCase().includes(searchTerm)) {
-                                option.selected = true;
-                                found = true;
-                            }
-                        });
-                        if (found) applyFilters();
-                    }
-                });
-                input.addEventListener('input', function() {
-                    const searchTerm = this.value.toLowerCase();
-                    Array.from(select.options).forEach(option => {
-                        option.style.display = option.value.toLowerCase().includes(searchTerm) ? '' : 'none';
-                    });
-                });
-                select.addEventListener('change', applyFilters);
             }
             container.appendChild(filterSection);
         }
+
         setupCurrencyInputs();
     } catch (error) {
         console.error('Erro ao carregar filtros:', error);
@@ -927,6 +927,7 @@ async function applyFilters() {
             };
         }
 
+        // Aplicar outros filtros
         const filterElements = document.querySelectorAll('.filter-section');
         filterElements.forEach(section => {
             const column = section.querySelector('h4')?.textContent.trim();
@@ -954,8 +955,7 @@ async function applyFilters() {
             }
         });
 
-        console.log("Filters to be applied:", filters);
-
+        // Enviar filtros para o backend
         const response = await fetch('/api/apply_filters', {
             method: 'POST',
             headers: {
@@ -966,7 +966,8 @@ async function applyFilters() {
                 page: 1,
                 page_size: 100,
                 sort_column: null,
-                ascending: true
+                ascending: true,
+                sheet_name: '{{ sheet_name }}'  // Passar o nome da planilha para o backend
             })
         });
 
@@ -982,17 +983,6 @@ async function applyFilters() {
         activeFilters = filters;
         updateActiveFiltersDisplay();
         setupTableEvents();
-
-        const totalPages = Math.ceil(data.total / data.page_size);
-        const paginationContainer = document.querySelector('.pagination');
-        paginationContainer.innerHTML = '';
-        if (data.page > 1) {
-            paginationContainer.innerHTML += `<a href="?page=${data.page - 1}&page_size=${data.page_size}">Anterior</a>`;
-        }
-        paginationContainer.innerHTML += ` Página ${data.page} de ${totalPages} `;
-        if (data.page < totalPages) {
-            paginationContainer.innerHTML += `<a href="?page=${data.page + 1}&page_size=${data.page_size}">Próxima</a>`;
-        }
     } catch (error) {
         console.error('Erro ao aplicar filtros:', error);
         alert('Ocorreu um erro ao aplicar os filtros.');
@@ -1018,6 +1008,15 @@ function resetFilters() {
             searchInput.value = '';
         }
     });
+
+    // Limpar o conjunto de células destacadas
+    highlightedCells.clear();
+
+    // Remover o destaque de todas as células
+    document.querySelectorAll('.styled-table td.highlighted').forEach(cell => {
+        cell.classList.remove('highlighted');
+    });
+
     document.getElementById('active-filters-list').innerHTML = '';
     activeFilters = {};
     applyFilters();
@@ -1033,7 +1032,7 @@ function showCopyFeedback(x, y) {
     document.body.appendChild(feedback);
     setTimeout(() => feedback.remove(), 2000);
 }
-
+let highlightedCells = new Set(); // Armazena os IDs das células destacadas
 function setupTableEvents() {
     const headers = document.querySelectorAll('.styled-table th');
     const tooltip = document.getElementById('tooltip');
@@ -1063,6 +1062,9 @@ function setupTableEvents() {
                 document.querySelector('.styled-table-container').innerHTML = data.table_html;
                 setupTableEvents();
                 addCopyButtons();
+
+                // Reaplicar os destaques após recarregar a tabela
+                reapplyHighlights();
             } catch (error) {
                 console.error('Erro ao ordenar tabela:', error);
             } finally {
@@ -1070,7 +1072,14 @@ function setupTableEvents() {
             }
         });
     });
-
+function reapplyHighlights() {
+    highlightedCells.forEach(cellId => {
+        const cell = document.getElementById(cellId);
+        if (cell) {
+            cell.classList.add('highlighted');
+        }
+    });
+}
     let targetColumnIndex = -1;
     headers.forEach((header, index) => {
         if (header.textContent.trim().toLowerCase() === 'autos do precatório') {
@@ -1080,9 +1089,11 @@ function setupTableEvents() {
 
     if (targetColumnIndex !== -1) {
         const rows = document.querySelectorAll('.styled-table tbody tr');
-        rows.forEach(row => {
+        rows.forEach((row, rowIndex) => {
             const targetCell = row.cells[targetColumnIndex];
             if (targetCell) {
+                const cellId = `row-${rowIndex}-col-${targetColumnIndex}`; // ID único para a célula
+                targetCell.id = cellId; // Atribuir um ID à célula
                 targetCell.style.cursor = 'pointer';
                 targetCell.title = 'Clique para copiar';
                 targetCell.addEventListener('click', function(e) {
@@ -1090,10 +1101,24 @@ function setupTableEvents() {
                     const textToCopy = this.textContent.trim();
                     navigator.clipboard.writeText(textToCopy).then(() => {
                         showCopyFeedback(e.clientX, e.clientY);
+
+                        // Alternar o destaque da célula
+                        if (this.classList.contains('highlighted')) {
+                            this.classList.remove('highlighted'); // Remove o destaque
+                            highlightedCells.delete(cellId); // Remove o ID da célula do conjunto
+                        } else {
+                            this.classList.add('highlighted'); // Adiciona o destaque
+                            highlightedCells.add(cellId); // Adiciona o ID da célula ao conjunto
+                        }
                     }).catch(err => {
                         console.error('Erro ao copiar:', err);
                     });
                 });
+
+                // Reaplicar o destaque se a célula estiver no conjunto
+                if (highlightedCells.has(cellId)) {
+                    targetCell.classList.add('highlighted');
+                }
             }
         });
     }
